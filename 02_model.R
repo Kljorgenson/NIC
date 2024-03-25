@@ -1,0 +1,69 @@
+#### MARSS models with ERA5 covariates
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(discharge)
+library(tidyverse)
+library(data.table)
+library(R2jags)
+
+## Read in tower dates
+dat <- read.csv("Data/NenanaIceClassic_1917-2021.csv") %>% rename(year = Year, doy = Decimal_doy)
+head(dat)
+
+## PDO data
+PDO <- read.table("Data/PDO.dat.txt", skip = 1, header = T) %>% pivot_longer(cols = Jan:Dec, names_to = "Month", values_to = "PDO")
+
+# Take yearly average and crop to length of variables
+PDO <- PDO %>% group_by(Year) %>% summarise(PDO = mean(PDO)) %>% filter(Year >= 1917 & Year <= 2021) %>% rename(year = Year)
+
+
+### Covariates
+covars <- read.csv("covars.csv")
+covars <- left_join(covars, PDO)
+
+data <- left_join(covars, dat) %>% filter(year < 2021)
+head(data)
+
+# Check covariance
+cov(data[,2:6])
+
+
+### JAGS model
+lm_jags <- function(){
+  
+  ## Likelihood
+  for (i in 1:N) {
+    mu[i] <- alpha + B1*temp[i] + B2*runoff[i] + B3*ice_depth[i] + B4*SWE[i] + B5*PDO[i]
+    doy[i]~dnorm(mu[i], tau)
+  }
+  
+  ## Priors
+  alpha ~ dnorm(130, 100)
+  B1 ~ dnorm(0, 100)
+  B2 ~ dnorm(0, 2)
+  B3 ~ dnorm(0, 100)
+  B4 ~ dnorm(0, 100)
+  B5 ~ dnorm(0, 10)
+
+  
+  sigma~dunif(0, 100) # Residual standard deviation
+  tau <- 1/(sigma*sigma) # Residual precision
+  
+}
+ 
+
+# Chains and iterations
+n.chains = 3
+n.iter = 2000 
+n.burnin = 500
+
+# Parameters to estimate
+params <- c("alpha", "sigma", "B1", "B2", "B3", "B4", "B5")
+
+
+# run model
+jagsdata <- with(data[,2:7], list(doy = doy , temp = temp, runoff = runoff, ice_depth = ice_depth, SWE = SWE, PDO = PDO, N = length(doy)))
+fit <- jags(data = jagsdata, model.file = lm_jags, parameters.to.save = params,
+                  n.chains = n.chains, n.iter = n.iter, n.burnin = n.burnin)
+fit

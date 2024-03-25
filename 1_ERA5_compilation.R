@@ -15,7 +15,7 @@ library(ggplot2)
 # Followed code from: https://rpubs.com/Ajeep05/era5
 
 # Make a blank stack (using stack()) to store rasterlayer data and use a brick() command to read it.
-listfile <- list.files(pattern="Data/*.nc", full.names = TRUE)
+listfile <- list.files(path = "Data/", pattern="SWE.nc", full.names = TRUE)
 listfile
 
 
@@ -29,17 +29,14 @@ for (i in 1:length(listfile)) {
   
   d0 <- stack(d0,  filename)
   
-  
 }
 
 nlayers(d0)
 
-# Plot raster
-plot(d0)
 
-# Make raster stack into a list or rasters
+# Make raster stack into a list of rasters
 r.list <- list(setNames(unstack(d0), names(d0)))
-plot(d0[[1]]$X2024.01.01)
+plot(d0[[1]]$X2023.08.01)
 
 
 #### Clip ERA5 data to watersheds and average
@@ -47,41 +44,61 @@ plot(d0[[1]]$X2024.01.01)
 ## Read in watershed boundaries from shapefile
 shape.watershed <- st_read("Data/Watershed/AK_discharge.shp")
 
-plot(d0[[1]]$X2024.01.01)
-plot(shape.watershed, add = T)
-
-
-## Crop raster to watershed and create mask
-# first clip to boundary of all watersheds to save processing time
-r2 <- crop(d0, extent(shape.watershed) )
-r.shed <- mask(r2, shape.watershed)
-
-plot(d0[[1]][[1]])
-plot(r.shed[[1]])
-plot(shape.watershed, add = T, lwd = T, col = "transparent")
+plot(d0[[1]]$X2023.08.01)
+plot(shape.watershed)
 
 
 ## Extract mean of raster values within each watershed to list object
-temp = raster::extract(r.shed, shape.watershed, method="simple", fun=mean, sp=T, df=TRUE 
-                       #exact = T #If TRUE the fraction of a cell that is covered is returned or used by fun
-)
+temp = raster::extract(d0, shape.watershed, method="simple", fun=mean, sp=T, df=TRUE)
 
-# Convert SpatialPolygonDataframe into data frame
+# Convert SpatialPolygonDataframe into dataframe
 temp_df<- as.data.frame(temp)
 head(temp_df)
 
 # Make data long
-temp_df <- gather(temp_df, date, temp.K, 5:ncol(temp_df), factor_key = T) 
-temp_df$date <- substr(temp_df$date, 2, 11)
-temp_df$date <- as.Date(temp_df$date, format = "%Y.%m.%d", tz = "UTC") # Data are origionally in UTC
-temp_df$date <- format(temp_df$date, tz = "America/Anchorage")
-head(temp_df)
+temp_df <- gather(temp_df, date, SWE, 5:ncol(temp_df), factor_key = T) 
 
-# Units are in Kelvin - conver to Celcius
-temp_df$temp <- temp_df$temp.K-273.15
 
-temp_df %>% ggplot(aes(date, temp, color = as.factor(gridcode))) + geom_line()
+# Select daily rows and take monthly average
+temp_df$year = substr(temp_df$date, start = 2, stop = 5)
+temp_df$month = substr(temp_df$date, start = 7, stop = 8)
+temp_df <- temp_df %>% filter(month == "03") %>% group_by(year) %>% summarise(SWE = sum(SWE))
+
+
+temp_df %>% ggplot(aes(year, temp)) + geom_line()
 
 
 ## Export data
-write.csv(temp_df, "ERA5-daily.csv")
+write.csv(temp_df, "ERA5-Mar-SWE.csv", row.names = F)
+
+
+
+
+
+#### Join all data together
+temp1 <- read.csv("ERA5-Mar-temp_early.csv")
+temp2 <-read.csv("ERA5-Mar-temp_2002-2022.csv")
+
+temp <- rbind(temp1, temp2) %>% select(year, temp)
+
+
+runoff <- read.csv("ERA5-Mar-runoff.csv")
+
+
+# lake ice depth
+ice <- read.csv("ERA5-Mar-icedepth.csv") %>% select(year, ice_depth)
+
+# SWE
+swe <- read.csv("ERA5-Mar-SWE.csv")
+
+# Join all vars
+vars <- full_join(temp, runoff)
+vars <- full_join(vars, ice)
+vars <- full_join(vars, swe)
+head(vars)
+
+vars %>% ggplot(aes(year, temp)) + geom_line() + geom_line(aes(year, runoff), color = "green") + geom_line(aes(year, ice_depth), color = "blue") +
+  geom_line(aes(year, SWE), color = "yellow")
+
+
+write.csv(vars, "covars.csv", row.names = F)
