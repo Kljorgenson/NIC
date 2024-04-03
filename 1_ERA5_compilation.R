@@ -13,9 +13,15 @@ library(ggplot2)
 
 #### Compile ERA5 data
 # Followed code from: https://rpubs.com/Ajeep05/era5
+# temp = average over area, monthly average
+# runoff = average over area, monthly sum
+# SWE = average over area, monthly average
+# ice_depth = average over area, monthly average
+
+
 
 # Make a blank stack (using stack()) to store rasterlayer data and use a brick() command to read it.
-listfile <- list.files(path = "Data/", pattern="SWE.nc", full.names = TRUE)
+listfile <- list.files(path = "Data/", pattern="runoff_2023.nc", full.names = TRUE)
 listfile
 
 
@@ -56,20 +62,20 @@ temp_df<- as.data.frame(temp)
 head(temp_df)
 
 # Make data long
-temp_df <- gather(temp_df, date, SWE, 5:ncol(temp_df), factor_key = T) 
+temp_df <- gather(temp_df, date, runoff, 5:ncol(temp_df), factor_key = T) 
 
 
 # Select daily rows and take monthly average
 temp_df$year = substr(temp_df$date, start = 2, stop = 5)
 temp_df$month = substr(temp_df$date, start = 7, stop = 8)
-temp_df <- temp_df %>% filter(month == "03") %>% group_by(year) %>% summarise(SWE = sum(SWE))
+temp_df <- temp_df %>% filter(month == "03") %>% group_by(year) %>% summarise(runoff = sum(runoff))
 
 
 temp_df %>% ggplot(aes(year, temp)) + geom_line()
 
 
 ## Export data
-write.csv(temp_df, "ERA5-Mar-SWE.csv", row.names = F)
+write.csv(temp_df, "ERA5-Mar-runoff_23.csv", row.names = F)
 
 
 

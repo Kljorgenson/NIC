@@ -15,18 +15,16 @@ head(dat)
 PDO <- read.table("Data/PDO.dat.txt", skip = 1, header = T) %>% pivot_longer(cols = Jan:Dec, names_to = "Month", values_to = "PDO")
 
 # Take yearly average and crop to length of variables
-PDO <- PDO %>% group_by(Year) %>% summarise(PDO = mean(PDO)) %>% filter(Year >= 1917 & Year <= 2021) %>% rename(year = Year)
+PDO <- PDO %>% group_by(Year) %>% summarise(PDO = mean(PDO)) %>% filter(Year >= 1917 & Year <= 2023) %>% rename(year = Year)
 
 
 ### Covariates
 covars <- read.csv("covars.csv")
 covars <- left_join(covars, PDO)
 
-data <- left_join(covars, dat) %>% filter(year < 2021)
+data <- left_join(covars, dat) %>% filter(year < 2021) # I am redoing 2021-2023 temp data
 head(data)
 
-# Check covariance
-cov(data[,2:6])
 
 
 ### JAGS model
@@ -67,3 +65,7 @@ jagsdata <- with(data[,2:7], list(doy = doy , temp = temp, runoff = runoff, ice_
 fit <- jags(data = jagsdata, model.file = lm_jags, parameters.to.save = params,
                   n.chains = n.chains, n.iter = n.iter, n.burnin = n.burnin)
 fit
+
+
+# Model checks
+traceplot(fit)
