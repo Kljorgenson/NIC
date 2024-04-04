@@ -84,8 +84,19 @@ str(samples)
 
 # extract posterior means from the mcarray object by marginalizing over chains and iterations (alternative: posterior modes)
 posterior_means <- lapply(samples, apply, 1, "mean")
-str(posterior_means)
 
+
+## Hmm I don't know how to predict the correct way
+# Just mean, no error, predict for 2024
+new <- data.frame(temp = 13, runoff = 0.007, ice_depth = 11, SWE = 31.7, PDO = 0)
+posterior_means$alpha + posterior_means$B1*new[1,1] + posterior_means$B2*new[1,2] + posterior_means$B3*new[1,3] + posterior_means$B4*new[1,4]
+
+
+
+
+
+
+### Better way?
 # take our posterior means 
 B <- as.matrix(unlist(posterior_means[c("alpha", "B1", "B2", "B3", "B4", "B5")]))
 
@@ -97,15 +108,11 @@ y_hat <- X %*% B ## Hmm idk how to do this
 head(y_hat)
 
 
-# Model checks
+### Model checks
+
 traceplot(fit)
 
 
-## Make prediction
-
-# drawing samples gives mcarrays
-samples <- jags.samples(fit)
-str(samples)
 
 
 
