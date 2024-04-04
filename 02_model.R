@@ -6,29 +6,44 @@ library(discharge)
 library(tidyverse)
 library(data.table)
 library(R2jags)
+library(rjags)
 
 ## Read in tower dates
-dat <- read.csv("Data/NenanaIceClassic_1917-2021.csv") %>% rename(year = Year, doy = Decimal_doy)
+dat <- read.csv("Raw data/NenanaIceClassic_1917-2021.csv") %>% rename(year = Year, doy = Decimal_doy)
 head(dat)
 
 ## PDO data
-PDO <- read.table("Data/PDO.dat.txt", skip = 1, header = T) %>% pivot_longer(cols = Jan:Dec, names_to = "Month", values_to = "PDO")
+PDO <- read.table("Raw data/PDO.dat.txt", skip = 1, header = T) %>% pivot_longer(cols = Jan:Dec, names_to = "Month", values_to = "PDO")
 
 # Take yearly average and crop to length of variables
-PDO <- PDO %>% group_by(Year) %>% summarise(PDO = mean(PDO)) %>% filter(Year >= 1917 & Year <= 2023) %>% rename(year = Year)
+PDO <- PDO %>% filter(Month %in% c("Jan", "Feb", "Mar")) %>% group_by(Year) %>% summarise(PDO = mean(PDO)) %>% filter(Year >= 1917 & Year <= 2024) %>% rename(year = Year)
 
 
 ### Covariates
 covars <- read.csv("covars.csv")
 covars <- left_join(covars, PDO)
 
-data <- left_join(covars, dat) %>% filter(year < 2021) # I am redoing 2021-2023 temp data
+data <- left_join(covars, dat) %>% filter(year < 2024) # I am redoing 2021-2023 temp data
 head(data)
 
+## Plot doy
+data %>% ggplot(aes(year, doy)) + geom_point()
+
+## Simple linear model
+lm <- lm(data$doy ~ data$temp + data$runoff + data$ice_depth + data$SWE + data$PDO)
+summary(lm)
+
+pred <- predict(lm, data.frame(temp = 13, runoff = 0.007, ice_depth = 11, SWE = 31.7, PDO = 0))
+mean(pred)
+sd(pred)
 
 
-### JAGS model
-lm_jags <- function(){
+
+## I am not sure how to predict from this model
+
+### Model with rjags
+writeLines("
+  model {
   
   ## Likelihood
   for (i in 1:N) {
@@ -43,29 +58,62 @@ lm_jags <- function(){
   B3 ~ dnorm(0, 100)
   B4 ~ dnorm(0, 100)
   B5 ~ dnorm(0, 10)
-
+  
   
   sigma~dunif(0, 100) # Residual standard deviation
   tau <- 1/(sigma*sigma) # Residual precision
   
 }
- 
-
-# Chains and iterations
-n.chains = 3
-n.iter = 2000 
-n.burnin = 500
-
-# Parameters to estimate
-params <- c("alpha", "sigma", "B1", "B2", "B3", "B4", "B5")
+", con = "mod.jags")
 
 
-# run model
 jagsdata <- with(data[,2:7], list(doy = doy , temp = temp, runoff = runoff, ice_depth = ice_depth, SWE = SWE, PDO = PDO, N = length(doy)))
-fit <- jags(data = jagsdata, model.file = lm_jags, parameters.to.save = params,
-                  n.chains = n.chains, n.iter = n.iter, n.burnin = n.burnin)
-fit
+
+# create a jags model object
+jags <- jags.model("mod.jags",
+                   data = jagsdata,
+                   n.chains = 4,
+                   n.adapt = 100)
+
+# burn-in
+update(jags, 1000)
+
+# draw samples
+samples <- jags.samples(jags, c("alpha", "B1", "B2", "B3", "B4", "B5"), 1000)
+str(samples)
+
+# extract posterior means from the mcarray object by marginalizing over chains and iterations (alternative: posterior modes)
+posterior_means <- lapply(samples, apply, 1, "mean")
+str(posterior_means)
+
+# take our posterior means 
+B <- as.matrix(unlist(posterior_means[c("alpha", "B1", "B2", "B3", "B4", "B5")]))
+
+# create a model matrix from x
+X <- cbind(1, data.frame(temp = 13, runoff = 0.007, ice_depth = 11, SWE = 31.7, PDO = 0))
+
+# predicted outcomes are the product of our model matrix and estimates
+y_hat <- X %*% B ## Hmm idk how to do this
+head(y_hat)
 
 
 # Model checks
 traceplot(fit)
+
+
+## Make prediction
+
+# drawing samples gives mcarrays
+samples <- jags.samples(fit)
+str(samples)
+
+
+
+
+
+
+
+
+
+
+
